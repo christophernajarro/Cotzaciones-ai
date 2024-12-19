@@ -145,7 +145,7 @@ def interpretar_items_con_openai(lista_items_crudos):
         print(f"Error al interpretar ítems con OpenAI: {e}")
         return None
 
-def comparar_items_con_precios(lista_items, base_de_datos, score_threshold=50):
+def comparar_items_con_precios(lista_items, base_de_datos, score_threshold=55):
     """
     lista_items ahora es una lista de dict con {producto_original, cantidad}.
     """
@@ -278,7 +278,7 @@ def procesar():
     if items_interpretados is None:
         return "No se pudo interpretar los ítems con OpenAI.", 500
 
-    resultados = comparar_items_con_precios(items_interpretados, base_de_datos, score_threshold=50)
+    resultados = comparar_items_con_precios(items_interpretados, base_de_datos, score_threshold=55)
 
     # Calcular total general
     total_general = 0
