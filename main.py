@@ -8,11 +8,12 @@ import re
 import unidecode
 from io import StringIO
 from dotenv import load_dotenv
+import pdfplumber
+from docx import Document
+import json
 
-# Cargar variables de entorno desde .env (solo local)
 load_dotenv()
 
-# Obtener la clave de entorno
 api_key = os.environ.get("OPENAI_API_KEY")
 if not api_key:
     raise ValueError("La variable de entorno OPENAI_API_KEY no está definida.")
@@ -22,11 +23,13 @@ client = OpenAI(api_key=api_key)
 def cargar_base_de_datos_contenido(contenido_csv):
     try:
         df = pd.read_csv(StringIO(contenido_csv))
-        if not all(col in df.columns for col in ['producto', 'precio', 'stock']):
-            raise ValueError("El CSV no tiene las columnas necesarias: producto, precio, stock.")
+        # Verificar que todas las columnas necesarias estén presentes, incluyendo 'SKU'
+        columnas_necesarias = ['producto', 'precio', 'stock', 'SKU']
+        if not all(col in df.columns for col in columnas_necesarias):
+            raise ValueError(f"El CSV no tiene las columnas necesarias: {', '.join(columnas_necesarias)}.")
         df['precio'] = pd.to_numeric(df['precio'], errors='coerce')
         df['stock'] = pd.to_numeric(df['stock'], errors='coerce')
-        df.dropna(subset=['producto', 'precio', 'stock'], inplace=True)
+        df.dropna(subset=['producto', 'precio', 'stock', 'SKU'], inplace=True)
         return df.reset_index(drop=True)
     except Exception as e:
         print(f"Error al cargar la base de datos: {e}")
@@ -37,12 +40,12 @@ def extraer_texto_de_imagen_api(ruta_imagen):
         with open(ruta_imagen, "rb") as image_file:
             image_data = base64.b64encode(image_file.read()).decode("utf-8")
             response = client.chat.completions.create(
-                model="gpt-4o",
+                model="gpt-4",
                 messages=[
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": "Extrae todos los elementos de la lista escolar de la imagen. No resumas ni cortes la información, incluye todos los ítems presentes en la imagen."},
+                            {"type": "text", "text": "Extrae todos los elementos de la lista escolar de la imagen. No resumas ni cortes la información, incluye todos los ítems presentes en la imagen. Lista cada ítem en una línea separada y precede cada ítem con un guión (-) para identificarlos."},
                             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_data}"}}
                         ]
                     }
@@ -55,6 +58,50 @@ def extraer_texto_de_imagen_api(ruta_imagen):
         print(f"Error al procesar la imagen: {e}")
         return None
 
+def extraer_texto_de_pdf(ruta_pdf):
+    texto = ""
+    try:
+        with pdfplumber.open(ruta_pdf) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    texto += page_text + "\n"
+        return texto.strip()
+    except Exception as e:
+        print(f"Error al procesar el PDF: {e}")
+        return None
+
+def extraer_texto_de_docx(ruta_docx):
+    try:
+        doc = Document(ruta_docx)
+        texto = ""
+        for p in doc.paragraphs:
+            texto += p.text + "\n"
+        return texto.strip()
+    except Exception as e:
+        print(f"Error al procesar el DOCX: {e}")
+        return None
+
+def extraer_items_de_texto_con_openai(texto):
+    try:
+        prompt = (
+            "Tienes que extraer la lista de productos/items exclusivamente, otro tipo de información no es relevante y deberías omitirla. "
+            "Extrae todos los elementos de la lista escolar del siguiente texto. "
+            "No resumas ni cortes la información, incluye todos los ítems presentes. "
+            "Lista cada ítem en una línea separada y precede cada ítem con un guión (-) para identificarlos:\n\n"
+            f"{texto}"
+        )
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2000,
+            temperature=0
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"Error al procesar el texto con OpenAI: {e}")
+        return None
+
 def normalizar_texto(texto):
     texto = texto.lower()
     texto = unidecode.unidecode(texto)
@@ -62,12 +109,53 @@ def normalizar_texto(texto):
     texto = texto.strip()
     return texto
 
-def comparar_items_con_precios(lista_extraida, base_de_datos, score_threshold=85):
+def interpretar_items_con_openai(lista_items_crudos):
+    """
+    Envía la lista de ítems crudos (las líneas originales sin '-') a OpenAI
+    para que devuelva un JSON con {producto_original, cantidad}.
+    Si no detecta cantidad, debe poner 1.
+    """
+    # Crear el prompt
+    # Pedimos un JSON para cada ítem: [{"producto_original": "...", "cantidad": n}, ...]
+    prompt = (
+        "A continuación se presentará una lista de ítems escolares. "
+        "Para cada ítem, determina la cantidad solicitada interpretando el texto original. "
+        "Si no se encuentra una cantidad explícita, asume 1. Devuelve un JSON con la estructura:\n\n"
+        "[\n"
+        "  {\"producto_original\": \"...\", \"cantidad\": <numero>},\n"
+        "  ...\n"
+        "]\n\n"
+        "Lista de ítems:\n"
+    )
+    for item in lista_items_crudos:
+        prompt += f"- {item}\n"
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2000,
+            temperature=0
+        )
+        contenido = response.choices[0].message.content.strip()
+        # Intentar parsear el JSON
+        data = json.loads(contenido)
+        return data
+    except Exception as e:
+        print(f"Error al interpretar ítems con OpenAI: {e}")
+        return None
+
+def comparar_items_con_precios(lista_items, base_de_datos, score_threshold=50):
+    """
+    lista_items ahora es una lista de dict con {producto_original, cantidad}.
+    """
     resultados = []
     base_de_datos['producto_normalizado'] = base_de_datos['producto'].apply(normalizar_texto)
 
-    for item in lista_extraida:
-        item_limpio = normalizar_texto(item)
+    for item_data in lista_items:
+        producto_original = item_data['producto_original']
+        cantidad = item_data['cantidad']
+        item_limpio = normalizar_texto(producto_original)
         mejor_score = 0
         mejor_fila = None
 
@@ -79,27 +167,47 @@ def comparar_items_con_precios(lista_extraida, base_de_datos, score_threshold=85
                 mejor_fila = datos
 
         if mejor_fila is not None and mejor_score >= score_threshold:
-            precio_val = mejor_fila['precio']
-            stock_val = mejor_fila['stock']
-            producto_csv = mejor_fila['producto']
-            precio_final = precio_val if stock_val > 0 else "No hay stock"
+            precio_unitario = mejor_fila['precio'] if mejor_fila['stock'] > 0 else "No hay stock"
+            if precio_unitario != "No hay stock":
+                precio_total = precio_unitario * cantidad
+            else:
+                precio_total = "-"
             resultados.append({
-                "producto_original": item,
-                "producto_csv": producto_csv,
-                "precio": precio_final,
-                "stock": stock_val,
+                "producto_original": producto_original,
+                "producto_csv": mejor_fila['producto'],
+                "SKU": mejor_fila['SKU'],  # Añadido SKU
+                "cantidad": cantidad,
+                "precio_unitario": precio_unitario,
+                "precio_total": precio_total,
+                "stock": mejor_fila['stock'],
                 "credibilidad": mejor_score
             })
         else:
             resultados.append({
-                "producto_original": item,
-                "producto_csv": "",
-                "precio": "No hay stock",
-                "stock": 0.0,
+                "producto_original": producto_original,
+                "producto_csv": "Sin coincidencias",
+                "SKU": "-",  # Añadido SKU en caso de sin coincidencias
+                "cantidad": cantidad,
+                "precio_unitario": "-",
+                "precio_total": "-",
+                "stock": "-",
                 "credibilidad": mejor_score
             })
 
     return resultados
+
+def dividir_en_lineas_y_extraer_items(texto_items_openai):
+    """
+    Extrae los ítems crudos sin aplicar lógica de cantidad aquí.
+    Solo devuelve la lista de strings (producto_original).
+    """
+    lineas = [l.strip() for l in texto_items_openai.split('\n') if l.strip()]
+    items = []
+    for linea in lineas:
+        if linea.startswith('-'):
+            item = linea[1:].strip()  
+            items.append(item)
+    return items
 
 app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
@@ -108,13 +216,13 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 @app.route("/", methods=["GET"])
 def index():
     return """
-    <h1>Sube una imagen de tu lista escolar y el CSV de productos</h1>
-    <p>El archivo CSV debe contener las columnas: <strong>producto, precio, stock</strong></p>
+    <h1>Sube un archivo (PNG/JPG/PDF/DOCX) y el CSV de productos</h1>
+    <p>El CSV debe tener columnas: producto, precio, stock, SKU</p>
     <form action='/procesar' method='post' enctype='multipart/form-data'>
-        <label>Sube la imagen (PNG/JPG):</label><br>
-        <input type='file' name='imagen' required><br><br>
+        <label>Archivo (PNG/JPG/PDF/DOCX):</label><br>
+        <input type='file' name='archivo' required><br><br>
 
-        <label>Sube el archivo CSV (con columnas producto, precio y stock):</label><br>
+        <label>Archivo CSV (producto, precio, stock, SKU):</label><br>
         <input type='file' name='csvfile' required><br><br>
 
         <input type='submit' value='Subir y Procesar'>
@@ -123,37 +231,99 @@ def index():
 
 @app.route("/procesar", methods=["POST"])
 def procesar():
-    if "imagen" not in request.files:
-        return "Error: No se ha subido la imagen.", 400
-    archivo_imagen = request.files["imagen"]
-    if archivo_imagen.filename == "":
-        return "Error: No se seleccionó ninguna imagen.", 400
+    if "archivo" not in request.files:
+        return "Error: No se ha subido el archivo.", 400
+    archivo = request.files["archivo"]
+    if archivo.filename == "":
+        return "Error: No se seleccionó ningún archivo.", 400
 
     if "csvfile" not in request.files:
-        return "Error: No se ha subido el archivo CSV.", 400
-    archivo_csv = request.files["csvfile"]
-    if archivo_csv.filename == "":
-        return "Error: No se seleccionó ningún archivo CSV.", 400
+        return "Error: No se subió el CSV.", 400
+    csvfile = request.files["csvfile"]
+    if csvfile.filename == "":
+        return "Error: No se seleccionó ningún CSV.", 400
 
-    ruta_imagen = os.path.join(UPLOAD_FOLDER, archivo_imagen.filename)
-    archivo_imagen.save(ruta_imagen)
+    ruta_archivo = os.path.join(UPLOAD_FOLDER, archivo.filename)
+    archivo.save(ruta_archivo)
 
-    contenido_csv = archivo_csv.read().decode("utf-8")
+    contenido_csv = csvfile.read().decode("utf-8")
     base_de_datos = cargar_base_de_datos_contenido(contenido_csv)
     if base_de_datos is None:
-        return "Error al cargar la base de datos. Asegúrese de que el CSV tenga las columnas producto, precio y stock.", 500
+        return "Error al cargar la base de datos.", 500
 
-    texto_extraido = extraer_texto_de_imagen_api(ruta_imagen)
-    if texto_extraido is None:
-        return "No se pudo extraer el texto de la imagen.", 500
+    extension = os.path.splitext(archivo.filename)[1].lower()
 
-    lista_items = [line.strip() for line in texto_extraido.split('\n') if line.strip()]
-    resultados = comparar_items_con_precios(lista_items, base_de_datos, score_threshold=85)
+    if extension in [".png", ".jpg", ".jpeg"]:
+        texto_items_openai = extraer_texto_de_imagen_api(ruta_archivo)
+    elif extension == ".pdf":
+        texto_extraido = extraer_texto_de_pdf(ruta_archivo)
+        if not texto_extraido:
+            return "No se pudo extraer texto del PDF.", 500
+        texto_items_openai = extraer_items_de_texto_con_openai(texto_extraido)
+    elif extension == ".docx":
+        texto_extraido = extraer_texto_de_docx(ruta_archivo)
+        if not texto_extraido:
+            return "No se pudo extraer texto del DOCX.", 500
+        texto_items_openai = extraer_items_de_texto_con_openai(texto_extraido)
+    else:
+        return "Tipo de archivo no soportado. Debe ser PNG, JPG, PDF o DOCX.", 400
 
-    html_resultados = "<h2>Resultados</h2><table border='1'><tr><th>Producto Original</th><th>Producto Coincidencia</th><th>Precio</th><th>Stock</th><th>Credibilidad</th></tr>"
+    if texto_items_openai is None or texto_items_openai.strip() == "":
+        return "No se pudo extraer ítems con OpenAI.", 500
+
+    lista_items_crudos = dividir_en_lineas_y_extraer_items(texto_items_openai)
+
+    # Ahora interpretamos la cantidad con OpenAI
+    items_interpretados = interpretar_items_con_openai(lista_items_crudos)
+    if items_interpretados is None:
+        return "No se pudo interpretar los ítems con OpenAI.", 500
+
+    resultados = comparar_items_con_precios(items_interpretados, base_de_datos, score_threshold=50)
+
+    # Calcular total general
+    total_general = 0
     for r in resultados:
-        html_resultados += f"<tr><td>{r['producto_original']}</td><td>{r['producto_csv']}</td><td>{r['precio']}</td><td>{r['stock']}</td><td>{r['credibilidad']}</td></tr>"
-    html_resultados += "</table>"
+        if r['precio_total'] != "-" and isinstance(r['precio_total'], (int, float)):
+            total_general += r['precio_total']
+
+    html_resultados = """
+    <h2>Resultados</h2>
+    <table border='1' style='border-collapse:collapse;width:100%;font-family:Arial;font-size:14px;'>
+    <tr style='background:#f0f0f0;'>
+      <th style='padding:5px;'>Producto Original</th>
+      <th style='padding:5px;'>Producto Coincidencia</th>
+      <th style='padding:5px;'>SKU</th>
+      <th style='padding:5px;'>Cantidad</th>
+      <th style='padding:5px;'>Precio Unitario</th>
+      <th style='padding:5px;'>Precio Total</th>
+      <th style='padding:5px;'>Stock</th>
+      <th style='padding:5px;'>Credibilidad</th>
+    </tr>
+    """
+
+    for r in resultados:
+        row_style = "background:#ffe6e6;" if r['producto_csv'] == "Sin coincidencias" else ""
+        html_resultados += f"""
+        <tr style='{row_style}'>
+          <td style='padding:5px;'>{r['producto_original']}</td>
+          <td style='padding:5px;'>{r['producto_csv']}</td>
+          <td style='padding:5px;'>{r['SKU']}</td>
+          <td style='padding:5px;'>{r['cantidad']}</td>
+          <td style='padding:5px;'>{r['precio_unitario']}</td>
+          <td style='padding:5px;'>{r['precio_total']}</td>
+          <td style='padding:5px;'>{r['stock']}</td>
+          <td style='padding:5px;'>{r['credibilidad']}</td>
+        </tr>
+        """
+
+    html_resultados += f"""
+    <tr style='background:#d0ffd0;'>
+      <td colspan='5' style='padding:5px;text-align:right;font-weight:bold;'>Total General:</td>
+      <td style='padding:5px;font-weight:bold;'>{total_general}</td>
+      <td colspan='2'></td>
+    </tr>
+    </table>
+    """
 
     return html_resultados
 
