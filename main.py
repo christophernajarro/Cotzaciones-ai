@@ -1,7 +1,8 @@
+import time
 import pandas as pd
 from openai import OpenAI
 import base64
-from flask import Flask, request
+from flask import Flask, request, g
 import os
 from fuzzywuzzy import fuzz
 import re
@@ -11,6 +12,20 @@ from dotenv import load_dotenv
 import pdfplumber
 from docx import Document
 import json
+from functools import wraps
+
+# Decorador para medir el tiempo de ejecución de las funciones
+def measure_time(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        duration = time.time() - start_time
+        if not hasattr(g, 'timings'):
+            g.timings = []
+        g.timings.append((func.__name__, duration))
+        return result
+    return wrapper
 
 load_dotenv()
 
@@ -20,6 +35,7 @@ if not api_key:
 
 client = OpenAI(api_key=api_key)
 
+@measure_time
 def cargar_base_de_datos_contenido(contenido_csv):
     try:
         df = pd.read_csv(StringIO(contenido_csv))
@@ -35,6 +51,7 @@ def cargar_base_de_datos_contenido(contenido_csv):
         print(f"Error al cargar la base de datos: {e}")
         return None
 
+@measure_time
 def extraer_texto_de_imagen_api(ruta_imagen):
     try:
         with open(ruta_imagen, "rb") as image_file:
@@ -45,7 +62,7 @@ def extraer_texto_de_imagen_api(ruta_imagen):
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": "Extrae todos los elementos de la lista escolar de la imagen. No resumas ni cortes la información, incluye todos los ítems presentes en la imagen. Lista cada ítem en una línea separada y precede cada ítem con un guión (-) para identificarlos."},
+                            {"type": "text", "text": "Extrae todos los elementos de la lista escolar de la imagen. Cada ítem en una línea separada con un '-'. Después, determina la cantidad interpretando el texto original. Si no se encuentra una cantidad explícita, asume 1. Devuelve un JSON con la estructura:\n[\n  {\"producto_original\": \"...\", \"cantidad\": <numero>},\n  ...\n]."},
                             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_data}"}}
                         ]
                     }
@@ -53,11 +70,13 @@ def extraer_texto_de_imagen_api(ruta_imagen):
                 max_tokens=2000,
                 temperature=0
             )
-            return response.choices[0].message.content
+            contenido = response.choices[0].message.content.strip()
+            return procesar_respuesta_json(contenido)
     except Exception as e:
         print(f"Error al procesar la imagen: {e}")
         return None
 
+@measure_time
 def extraer_texto_de_pdf(ruta_pdf):
     texto = ""
     try:
@@ -71,6 +90,7 @@ def extraer_texto_de_pdf(ruta_pdf):
         print(f"Error al procesar el PDF: {e}")
         return None
 
+@measure_time
 def extraer_texto_de_docx(ruta_docx):
     try:
         doc = Document(ruta_docx)
@@ -82,26 +102,6 @@ def extraer_texto_de_docx(ruta_docx):
         print(f"Error al procesar el DOCX: {e}")
         return None
 
-def extraer_items_de_texto_con_openai(texto):
-    try:
-        prompt = (
-            "Tienes que extraer la lista de productos/items exclusivamente, otro tipo de información no es relevante y deberías omitirla. "
-            "Extrae todos los elementos de la lista escolar del siguiente texto. "
-            "No resumas ni cortes la información, incluye todos los ítems presentes. "
-            "Lista cada ítem en una línea separada y precede cada ítem con un guión (-) para identificarlos:\n\n"
-            f"{texto}"
-        )
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=2000,
-            temperature=0
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        print(f"Error al procesar el texto con OpenAI: {e}")
-        return None
-
 def normalizar_texto(texto):
     texto = texto.lower()
     texto = unidecode.unidecode(texto)
@@ -109,42 +109,50 @@ def normalizar_texto(texto):
     texto = texto.strip()
     return texto
 
-def interpretar_items_con_openai(lista_items_crudos):
-    """
-    Envía la lista de ítems crudos (las líneas originales sin '-') a OpenAI
-    para que devuelva un JSON con {producto_original, cantidad}.
-    Si no detecta cantidad, debe poner 1.
-    """
-    # Crear el prompt
-    # Pedimos un JSON para cada ítem: [{"producto_original": "...", "cantidad": n}, ...]
-    prompt = (
-        "A continuación se presentará una lista de ítems escolares. "
-        "Para cada ítem, determina la cantidad solicitada interpretando el texto original. "
-        "Si no se encuentra una cantidad explícita, asume 1. Devuelve un JSON con la estructura:\n\n"
-        "[\n"
-        "  {\"producto_original\": \"...\", \"cantidad\": <numero>},\n"
-        "  ...\n"
-        "]\n\n"
-        "Lista de ítems:\n"
-    )
-    for item in lista_items_crudos:
-        prompt += f"- {item}\n"
-
+def procesar_respuesta_json(contenido):
+    # El contenido devuelto por la API debería ser un JSON con la estructura pedida
+    # Puede contener delimitadores ``` o ```json, los removemos.
+    contenido_limpio = contenido.replace("```json", "").replace("```", "").strip()
     try:
+        data = json.loads(contenido_limpio)
+        return data
+    except json.JSONDecodeError as e:
+        print(f"Error al decodificar JSON: {e}")
+        print(f"Contenido problemático:\n{contenido_limpio}")
+        return None
+
+@measure_time
+def extraer_items_de_texto_con_openai(texto):
+    """
+    Esta función ahora no solo extrae los ítems, sino que también los interpreta (cantidad).
+    Se realiza en un solo prompt para evitar el segundo llamado.
+    """
+    try:
+        prompt = (
+            "Tienes que extraer la lista de productos/items escolares exclusivamente del siguiente texto. "
+            "No resumas ni cortes la información, incluye todos los ítems presentes. "
+            "Lista cada ítem en una línea separada precedido por '-', y luego interpreta las cantidades. "
+            "Si no hay cantidad explícita, asume 1.\n"
+            "Devuelve un JSON con la estructura:\n"
+            "[\n"
+            "  {\"producto_original\": \"...\", \"cantidad\": <numero>},\n"
+            "  ...\n"
+            "]\n\n"
+            f"Texto:\n{texto}"
+        )
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=2000,
             temperature=0
         )
         contenido = response.choices[0].message.content.strip()
-        # Intentar parsear el JSON
-        data = json.loads(contenido)
-        return data
+        return procesar_respuesta_json(contenido)
     except Exception as e:
-        print(f"Error al interpretar ítems con OpenAI: {e}")
+        print(f"Error al procesar el texto con OpenAI: {e}")
         return None
 
+@measure_time
 def comparar_items_con_precios(lista_items, base_de_datos, score_threshold=55):
     """
     lista_items ahora es una lista de dict con {producto_original, cantidad}.
@@ -175,7 +183,7 @@ def comparar_items_con_precios(lista_items, base_de_datos, score_threshold=55):
             resultados.append({
                 "producto_original": producto_original,
                 "producto_csv": mejor_fila['producto'],
-                "SKU": mejor_fila['SKU'],  # Añadido SKU
+                "SKU": mejor_fila['SKU'],
                 "cantidad": cantidad,
                 "precio_unitario": precio_unitario,
                 "precio_total": precio_total,
@@ -186,7 +194,7 @@ def comparar_items_con_precios(lista_items, base_de_datos, score_threshold=55):
             resultados.append({
                 "producto_original": producto_original,
                 "producto_csv": "Sin coincidencias",
-                "SKU": "-",  # Añadido SKU en caso de sin coincidencias
+                "SKU": "-",
                 "cantidad": cantidad,
                 "precio_unitario": "-",
                 "precio_total": "-",
@@ -196,24 +204,12 @@ def comparar_items_con_precios(lista_items, base_de_datos, score_threshold=55):
 
     return resultados
 
-def dividir_en_lineas_y_extraer_items(texto_items_openai):
-    """
-    Extrae los ítems crudos sin aplicar lógica de cantidad aquí.
-    Solo devuelve la lista de strings (producto_original).
-    """
-    lineas = [l.strip() for l in texto_items_openai.split('\n') if l.strip()]
-    items = []
-    for linea in lineas:
-        if linea.startswith('-'):
-            item = linea[1:].strip()  
-            items.append(item)
-    return items
-
 app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 @app.route("/", methods=["GET"])
+@measure_time
 def index():
     return """
     <h1>Sube un archivo (PNG/JPG/PDF/DOCX) y el CSV de productos</h1>
@@ -230,6 +226,7 @@ def index():
     """
 
 @app.route("/procesar", methods=["POST"])
+@measure_time
 def procesar():
     if "archivo" not in request.files:
         return "Error: No se ha subido el archivo.", 400
@@ -254,29 +251,22 @@ def procesar():
     extension = os.path.splitext(archivo.filename)[1].lower()
 
     if extension in [".png", ".jpg", ".jpeg"]:
-        texto_items_openai = extraer_texto_de_imagen_api(ruta_archivo)
+        items_interpretados = extraer_texto_de_imagen_api(ruta_archivo)
     elif extension == ".pdf":
         texto_extraido = extraer_texto_de_pdf(ruta_archivo)
         if not texto_extraido:
             return "No se pudo extraer texto del PDF.", 500
-        texto_items_openai = extraer_items_de_texto_con_openai(texto_extraido)
+        items_interpretados = extraer_items_de_texto_con_openai(texto_extraido)
     elif extension == ".docx":
         texto_extraido = extraer_texto_de_docx(ruta_archivo)
         if not texto_extraido:
             return "No se pudo extraer texto del DOCX.", 500
-        texto_items_openai = extraer_items_de_texto_con_openai(texto_extraido)
+        items_interpretados = extraer_items_de_texto_con_openai(texto_extraido)
     else:
         return "Tipo de archivo no soportado. Debe ser PNG, JPG, PDF o DOCX.", 400
 
-    if texto_items_openai is None or texto_items_openai.strip() == "":
-        return "No se pudo extraer ítems con OpenAI.", 500
-
-    lista_items_crudos = dividir_en_lineas_y_extraer_items(texto_items_openai)
-
-    # Ahora interpretamos la cantidad con OpenAI
-    items_interpretados = interpretar_items_con_openai(lista_items_crudos)
-    if items_interpretados is None:
-        return "No se pudo interpretar los ítems con OpenAI.", 500
+    if items_interpretados is None or not isinstance(items_interpretados, list):
+        return "No se pudo extraer e interpretar ítems con OpenAI.", 500
 
     resultados = comparar_items_con_precios(items_interpretados, base_de_datos, score_threshold=55)
 
@@ -324,6 +314,12 @@ def procesar():
     </tr>
     </table>
     """
+
+    # Imprimir los tiempos de ejecución en la consola
+    if hasattr(g, 'timings'):
+        print("Tiempos de ejecución por función:")
+        for func_name, duration in g.timings:
+            print(f"{func_name}: {duration:.4f} segundos")
 
     return html_resultados
 
