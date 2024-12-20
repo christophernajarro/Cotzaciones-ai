@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>DHGroup - Procesar Archivos</title>
+    <!-- Incluir Tailwind CSS desde CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Iconos de Heroicons -->
+    <script src="https://unpkg.com/heroicons@2.0.13/dist/heroicons.min.js"></script>
+</head>
+<body class="bg-gradient-to-r from-blue-100 to-blue-200 min-h-screen flex flex-col">
+    <!-- Cabecera -->
+    <header class="bg-white shadow">
+        <div class="container mx-auto px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center">
+                <h1 class="text-2xl font-bold text-gray-800">DHGroup</h1>
+            </div>
+            <nav>
+                <a href="{{ url_for('logout') }}" class="text-red-500 hover:text-red-700 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                    Cerrar Sesión
+                </a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Contenido Principal -->
+    <main class="flex-grow container mx-auto px-6 py-12">
+        <h2 class="text-3xl font-bold mb-8 text-center text-gray-800">Procesar Archivos</h2>
+        
+        <!-- Mostrar mensajes flash -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-6 space-y-4">
+                    {% for category, message in messages %}
+                        <div class="flex items-center p-4 mb-4 text-sm {{ 'text-green-700 bg-green-100' if category == 'success' else 'text-red-700 bg-red-100' }} rounded-lg" role="alert">
+                            <svg class="flex-shrink-0 w-5 h-5 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                                {% if category == 'success' %}
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                                {% else %}
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v4a1 1 0 102 0V7zm-1 8a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" clip-rule="evenodd" />
+                                {% endif %}
+                            </svg>
+                            <span>{{ message }}</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+        
+        <div class="max-w-md mx-auto bg-white rounded-lg shadow-md p-6">
+            <form action="{{ url_for('procesar') }}" method="POST" enctype="multipart/form-data">
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-semibold mb-2" for="archivo">
+                        <span class="flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                            </svg>
+                            Archivo (PNG, JPG, JPEG, PDF, DOCX)
+                        </span>
+                    </label>
+                    <input
+                        class="block w-full text-sm text-gray-700 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none focus:border-blue-500"
+                        id="archivo"
+                        name="archivo"
+                        type="file"
+                        accept=".png,.jpg,.jpeg,.pdf,.docx"
+                        required
+                    >
+                </div>
+                <div class="mb-6">
+                    <label class="block text-gray-700 text-sm font-semibold mb-2" for="csvfile">
+                        <span class="flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                            </svg>
+                            CSV de Precios
+                        </span>
+                    </label>
+                    <input
+                        class="block w-full text-sm text-gray-700 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none focus:border-blue-500"
+                        id="csvfile"
+                        name="csvfile"
+                        type="file"
+                        accept=".csv"
+                        required
+                    >
+                </div>
+                <div class="flex items-center justify-between">
+                    <button
+                        type="submit"
+                        class="flex items-center bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out focus:outline-none focus:shadow-outline"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Procesar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </main>
+
+    <!-- Pie de página -->
+    <footer class="bg-white shadow mt-12">
+        <div class="container mx-auto px-6 py-4 text-center text-gray-600">
+            &copy; 2024 DHGroup. Todos los derechos reservados.
+        </div>
+    </footer>
+</body>
+</html>

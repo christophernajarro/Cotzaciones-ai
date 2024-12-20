@@ -2,7 +2,7 @@ import time
 import pandas as pd
 from openai import OpenAI
 import base64
-from flask import Flask, request, g
+from flask import Flask, request, g, render_template, redirect, url_for, session, flash
 import os
 from fuzzywuzzy import fuzz
 import re
@@ -26,6 +26,15 @@ def measure_time(func):
         g.timings.append((func.__name__, duration))
         return result
     return wrapper
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('logged_in'):
+            flash("Por favor, inicia sesión para acceder a esta página.", "warning")
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 load_dotenv()
 
@@ -205,28 +214,42 @@ def comparar_items_con_precios(lista_items, base_de_datos, score_threshold=55):
     return resultados
 
 app = Flask(__name__)
+app.secret_key = 'LbX6pxQ8bW3uEdWbLAoPjUregZbgPNg3' 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+@app.route("/login", methods=["GET", "POST"])
+@measure_time
+def login():
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        if username == "dhgroup2024" and password == "dhgroup2024":
+            session['logged_in'] = True
+            flash("Has iniciado sesión exitosamente.", "success")
+            return redirect(url_for('index'))
+        else:
+            flash("Usuario o contraseña incorrectos.", "danger")
+            return redirect(url_for('login'))
+    return render_template("login.html")
+
+@app.route("/logout")
+@measure_time
+@login_required
+def logout():
+    session.pop('logged_in', None)
+    flash("Has cerrado sesión.", "success")
+    return redirect(url_for('login'))
+
 @app.route("/", methods=["GET"])
 @measure_time
+@login_required
 def index():
-    return """
-    <h1>Sube un archivo (PNG/JPG/PDF/DOCX) y el CSV de productos</h1>
-    <p>El CSV debe tener columnas: producto, precio, stock, SKU</p>
-    <form action='/procesar' method='post' enctype='multipart/form-data'>
-        <label>Archivo (PNG/JPG/PDF/DOCX):</label><br>
-        <input type='file' name='archivo' required><br><br>
-
-        <label>Archivo CSV (producto, precio, stock, SKU):</label><br>
-        <input type='file' name='csvfile' required><br><br>
-
-        <input type='submit' value='Subir y Procesar'>
-    </form>
-    """
+    return render_template("index.html")
 
 @app.route("/procesar", methods=["POST"])
 @measure_time
+@login_required
 def procesar():
     if "archivo" not in request.files:
         return "Error: No se ha subido el archivo.", 400
@@ -276,44 +299,11 @@ def procesar():
         if r['precio_total'] != "-" and isinstance(r['precio_total'], (int, float)):
             total_general += r['precio_total']
 
-    html_resultados = """
-    <h2>Resultados</h2>
-    <table border='1' style='border-collapse:collapse;width:100%;font-family:Arial;font-size:14px;'>
-    <tr style='background:#f0f0f0;'>
-      <th style='padding:5px;'>Producto Original</th>
-      <th style='padding:5px;'>Producto Coincidencia</th>
-      <th style='padding:5px;'>SKU</th>
-      <th style='padding:5px;'>Cantidad</th>
-      <th style='padding:5px;'>Precio Unitario</th>
-      <th style='padding:5px;'>Precio Total</th>
-      <th style='padding:5px;'>Stock</th>
-      <th style='padding:5px;'>Credibilidad</th>
-    </tr>
-    """
-
-    for r in resultados:
-        row_style = "background:#ffe6e6;" if r['producto_csv'] == "Sin coincidencias" else ""
-        html_resultados += f"""
-        <tr style='{row_style}'>
-          <td style='padding:5px;'>{r['producto_original']}</td>
-          <td style='padding:5px;'>{r['producto_csv']}</td>
-          <td style='padding:5px;'>{r['SKU']}</td>
-          <td style='padding:5px;'>{r['cantidad']}</td>
-          <td style='padding:5px;'>{r['precio_unitario']}</td>
-          <td style='padding:5px;'>{r['precio_total']}</td>
-          <td style='padding:5px;'>{r['stock']}</td>
-          <td style='padding:5px;'>{r['credibilidad']}</td>
-        </tr>
-        """
-
-    html_resultados += f"""
-    <tr style='background:#d0ffd0;'>
-      <td colspan='5' style='padding:5px;text-align:right;font-weight:bold;'>Total General:</td>
-      <td style='padding:5px;font-weight:bold;'>{total_general}</td>
-      <td colspan='2'></td>
-    </tr>
-    </table>
-    """
+    # Preparar los datos para la plantilla
+    datos_para_template = {
+        "resultados": resultados,
+        "total_general": total_general
+    }
 
     # Imprimir los tiempos de ejecución en la consola
     if hasattr(g, 'timings'):
@@ -321,7 +311,7 @@ def procesar():
         for func_name, duration in g.timings:
             print(f"{func_name}: {duration:.4f} segundos")
 
-    return html_resultados
+    return render_template("resultados.html", **datos_para_template)
 
 if __name__ == "__main__":
     app.run(debug=True)

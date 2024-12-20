@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Login - DHGroup</title>
+    <!-- Incluir Tailwind CSS desde CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Iconos de Heroicons -->
+    <script src="https://unpkg.com/heroicons@2.0.13/dist/heroicons.min.js"></script>
+</head>
+<body class="bg-gradient-to-r from-green-100 to-green-200 min-h-screen flex flex-col">
+    <!-- Cabecera -->
+    <header class="bg-white shadow">
+        <div class="container mx-auto px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center">
+                <h1 class="text-2xl font-bold text-gray-800">DHGroup</h1>
+            </div>
+        </div>
+    </header>
+
+    <!-- Contenido Principal -->
+    <main class="flex-grow container mx-auto px-6 py-12 flex items-center justify-center">
+        <div class="max-w-md w-full bg-white rounded-lg shadow-md p-8">
+            <h2 class="text-2xl font-bold mb-6 text-center text-gray-800">Iniciar Sesión</h2>
+            
+            <!-- Mostrar mensajes flash -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <div class="mb-6 space-y-4">
+                        {% for category, message in messages %}
+                            <div class="flex items-center p-4 text-sm {{ 'text-green-700 bg-green-100' if category == 'success' else 'text-red-700 bg-red-100' }} rounded-lg" role="alert">
+                                <svg class="flex-shrink-0 w-5 h-5 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                                    {% if category == 'success' %}
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                                    {% else %}
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v4a1 1 0 102 0V7zm-1 8a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" clip-rule="evenodd" />
+                                    {% endif %}
+                                </svg>
+                                <span>{{ message }}</span>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
+            
+            <form method="POST" action="{{ url_for('login') }}">
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-semibold mb-2" for="username">
+                        <span class="flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14c-4.418 0-8 1.79-8 4v2h16v-2c0-2.21-3.582-4-8-4z" />
+                            </svg>
+                            Usuario
+                        </span>
+                    </label>
+                    <input
+                        class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-500"
+                        id="username"
+                        name="username"
+                        type="text"
+                        placeholder="user pos dhgroup"
+                        required
+                    >
+                </div>
+                <div class="mb-6">
+                    <label class="block text-gray-700 text-sm font-semibold mb-2" for="password">
+                        <span class="flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c1.104 0 2 .896 2 2v1a2 2 0 11-4 0v-1c0-1.104.896-2 2-2zm4 0v1a4 4 0 11-8 0v-1a4 4 0 118 0zM6 8V6a6 6 0 1112 0v2" />
+                            </svg>
+                            Contraseña
+                        </span>
+                    </label>
+                    <input
+                        class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 mb-3 leading-tight focus:outline-none focus:ring-2 focus:ring-green-500"
+                        id="password"
+                        name="password"
+                        type="password"
+                        placeholder="pass pos dhgroup"
+                        required
+                    >
+                </div>
+                <div class="flex items-center justify-between">
+                    <button
+                        type="submit"
+                        class="w-full flex items-center justify-center bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-green-500"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 12h14l-7 7-7-7z" />
+                        </svg>
+                        Iniciar Sesión
+                    </button>
+                </div>
+            </form>
+        </div>
+    </main>
+
+    <!-- Pie de página -->
+    <footer class="bg-white shadow mt-12">
+        <div class="container mx-auto px-6 py-4 text-center text-gray-600">
+            &copy; 2024 DHGroup. Todos los derechos reservados.
+        </div>
+    </footer>
+</body>
+</html>

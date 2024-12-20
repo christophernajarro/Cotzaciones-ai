@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Resultados del Procesamiento - DHGroup</title>
+    <!-- Incluir Tailwind CSS desde CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Iconos de Heroicons -->
+    <script src="https://unpkg.com/heroicons@2.0.13/dist/heroicons.min.js"></script>
+    <style>
+        /* Estilos específicos para impresión */
+        @media print {
+            /* Ocultar elementos con la clase 'no-print' */
+            .no-print {
+                display: none;
+            }
+
+            /* Ocultar columnas específicas usando 'print-hide' */
+            .print-hide {
+                display: none;
+            }
+
+            /* Ajustar la tabla para impresión */
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 12pt; /* Reducir tamaño de fuente para impresión */
+            }
+
+            th, td {
+                border: 1px solid #ddd;
+                padding: 2px; /* Reducido de py-2 a py-1 */
+                word-wrap: break-word;
+                text-align: center;
+            }
+
+            body {
+                font-family: Arial, sans-serif;
+                margin: 10mm; /* Ajustar márgenes para impresión */
+            }
+
+            /* Permitir que las filas se dividan entre páginas */
+            tr {
+                page-break-inside: avoid;
+            }
+
+            /* Añadir encabezado personalizado antes de la impresión */
+            body::before {
+                content: "Resultados del Procesamiento";
+                display: block;
+                text-align: center;
+                font-size: 16px;
+                font-weight: bold;
+                margin-bottom: 10px;
+            }
+
+            /* Ajustar la columna 'Credibilidad' para mostrar solo el número */
+            .credibilidad-print::after {
+                content: "";
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col">
+    <!-- Cabecera -->
+    <header class="bg-white shadow no-print">
+        <div class="container mx-auto px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center">
+                <h1 class="text-xl font-bold text-gray-800">DHGroup</h1>
+            </div>
+            <nav class="flex space-x-4">
+                <a href="/" class="flex items-center bg-blue-500 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded shadow transition duration-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                    Volver al Inicio
+                </a>
+                <a href="{{ url_for('logout') }}" class="flex items-center bg-red-500 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded shadow transition duration-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                    Cerrar Sesión
+                </a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Contenido Principal -->
+    <main class="flex-grow container mx-auto px-6 py-8">
+        <h2 class="text-3xl font-bold mb-6 text-center text-gray-800 no-print">Resultados del Procesamiento</h2>
+        
+        <!-- Botón de Impresión -->
+        <div class="flex justify-end mb-4 no-print">
+            <button onclick="window.print()" class="flex items-center bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow transition duration-300">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 17l4 4 4-4m-4-5v9" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+                Imprimir Resultados
+            </button>
+        </div>
+
+        <!-- Tabla de Resultados -->
+        <div class="overflow-x-auto">
+            <table class="min-w-full bg-white rounded-lg shadow-md">
+                <thead>
+                    <tr class="bg-blue-600 text-white">
+                        <th class="px-4 py-1">Producto Original</th>
+                        <th class="px-4 py-1 print-hide">Producto Coincidencia</th>
+                        <th class="px-4 py-1">SKU</th>
+                        <th class="px-4 py-1 print-hide">Cantidad</th>
+                        <th class="px-4 py-1">Precio Unitario (S/)</th>
+                        <th class="px-4 py-1">Precio Total (S/)</th>
+                        <th class="px-4 py-1 print-hide">Stock</th>
+                        <th class="px-4 py-1 print-hide">Credibilidad</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in resultados %}
+                        {% set tiene_coincidencia = r.producto_csv != 'Sin coincidencias' %}
+                        {% set tiene_stock = r.stock != '-' and r.stock > 0 %}
+                        <tr class="
+                            {% if tiene_coincidencia and tiene_stock %}
+                                bg-green-100
+                            {% elif r.stock == 0 or r.producto_csv == 'Sin coincidencias' %}
+                                bg-red-100
+                            {% else %}
+                                bg-white
+                            {% endif %}
+                            hover:bg-gray-50
+                        ">
+                            <td class="border px-4 py-1">{{ r.producto_original }}</td>
+                            <td class="border px-4 py-1 print-hide">{{ r.producto_csv }}</td>
+                            <td class="border px-4 py-1">{{ r.SKU }}</td>
+                            <td class="border px-4 py-1 print-hide">{{ r.cantidad }}</td>
+                            <td class="border px-4 py-1">
+                                {% if r.precio_unitario != '-' and r.precio_unitario != 'No hay stock' %}
+                                    S/ {{ "{:,.2f}".format(r.precio_unitario) }}
+                                {% else %}
+                                    {{ r.precio_unitario }}
+                                {% endif %}
+                            </td>
+                            <td class="border px-4 py-1">
+                                {% if r.precio_total != '-' %}
+                                    S/ {{ "{:,.2f}".format(r.precio_total) }}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td class="border px-4 py-1 print-hide">
+                                {% if r.stock != '-' %}
+                                    {{ r.stock }}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td class="border px-4 py-1 text-center print-hide">
+                                {% if tiene_coincidencia and tiene_stock %}
+                                    <!-- Ícono de Check con número de credibilidad -->
+                                    <div class="flex items-center justify-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-500 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                        </svg>
+                                        <span>{{ r.credibilidad }}</span>
+                                    </div>
+                                {% elif r.stock == 0 or r.producto_csv == 'Sin coincidencias' %}
+                                    <!-- Ícono de Cruz con número de credibilidad -->
+                                    <div class="flex items-center justify-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-500 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                        <span>{{ r.credibilidad }}</span>
+                                    </div>
+                                {% else %}
+                                    <!-- Opcional: Puedes dejar vacío o agregar otro ícono -->
+                                    <span>-</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    <tr class="bg-blue-100 font-bold">
+                        <td colspan="5" class="border px-4 py-1 text-right no-print">Total General:</td>
+                        <td class="border px-4 py-1">
+                            S/ {{ "{:,.2f}".format(total_general) }}
+                        </td>
+                        <td colspan="2" class="border px-4 py-1 print-hide"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <!-- Pie de Página -->
+    <footer class="bg-white shadow mt-12 no-print">
+        <div class="container mx-auto px-6 py-4 text-center text-gray-600">
+            &copy; 2024 DHGroup. Todos los derechos reservados.
+        </div>
+    </footer>
+</body>
+</html>
