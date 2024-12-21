@@ -1,0 +1,146 @@
+<!-- templates/cotizaciones.html -->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Cotizaciones - DHGroup</title>
+    <!-- Incluir Tailwind CSS desde CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Iconos de Heroicons -->
+    <script src="https://unpkg.com/heroicons@2.0.13/dist/heroicons.min.js"></script>
+    <style>
+        /* Estilos específicos para impresión */
+        @media print {
+            /* Ocultar elementos con la clase 'no-print' */
+            .no-print {
+                display: none;
+            }
+
+            /* Ajustar la tabla para impresión */
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 12pt; /* Reducir tamaño de fuente para impresión */
+            }
+
+            th, td {
+                border: 1px solid #ddd;
+                padding: 2px; /* Reducido de py-2 a py-1 */
+                word-wrap: break-word;
+                text-align: center;
+            }
+
+            body {
+                font-family: Arial, sans-serif;
+                margin: 10mm; /* Ajustar márgenes para impresión */
+            }
+
+            /* Permitir que las filas se dividan entre páginas */
+            tr {
+                page-break-inside: avoid;
+            }
+
+            /* Añadir encabezado personalizado antes de la impresión */
+            body::before {
+                content: "Lista de Cotizaciones";
+                display: block;
+                text-align: center;
+                font-size: 16px;
+                font-weight: bold;
+                margin-bottom: 10px;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col">
+    <!-- Cabecera -->
+    <header class="bg-white shadow no-print">
+        <div class="container mx-auto px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center">
+                <h1 class="text-2xl font-bold text-gray-800">DHGroup</h1>
+            </div>
+            <nav class="flex space-x-4">
+                <a href="{{ url_for('index') }}" class="flex items-center bg-blue-500 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded shadow transition duration-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                    Volver al Inicio
+                </a>
+                <a href="{{ url_for('logout') }}" class="flex items-center bg-red-500 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded shadow transition duration-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                    Cerrar Sesión
+                </a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Contenido Principal -->
+    <main class="flex-grow container mx-auto px-6 py-8">
+        <h2 class="text-3xl font-bold mb-6 text-center text-gray-800 no-print">Cotizaciones</h2>
+        
+        <!-- Botón para imprimir -->
+        <div class="flex justify-end mb-4 no-print">
+            <button onclick="window.print()" class="flex items-center bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow transition duration-300">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 17l4 4 4-4m-4-5v9" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+                Imprimir Cotizaciones
+            </button>
+        </div>
+
+        <!-- Tabla de Cotizaciones -->
+        <div class="overflow-x-auto">
+            <table class="min-w-full bg-white rounded-lg shadow-md">
+                <thead>
+                    <tr class="bg-blue-600 text-white">
+                        <th class="px-4 py-2">Archivo</th>
+                        <th class="px-4 py-2">Grado e Institución</th>
+                        <th class="px-4 py-2">Fecha</th>
+                        <th class="px-4 py-2">Total General</th>
+                        <th class="px-4 py-2">Cotización PDF</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cotizacion in cotizaciones %}
+                    <tr class="hover:bg-gray-100">
+                        <td class="border px-4 py-2 flex items-center">
+                            {{ cotizacion.archivo.split('_', 1)[1] }} <!-- Mostrar el nombre original sin el UUID -->
+                            <a href="{{ url_for('uploaded_file', filename=cotizacion.archivo) }}" class="ml-2 text-blue-500 hover:text-blue-700" title="Descargar Archivo">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M16 3H8a2 2 0 00-2 2v0a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2z" />
+                                </svg>
+                            </a>
+                        </td>
+                        <td class="border px-4 py-2">{{ cotizacion.grado_e_institucion }}</td>
+                        <td class="border px-4 py-2">{{ cotizacion.fecha.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        <td class="border px-4 py-2">S/ {{ "{:,.2f}".format(cotizacion.total_general) }}</td>
+                        <td class="border px-4 py-2">
+                            <a href="{{ url_for('download_pdf', cotizacion_id=cotizacion.id) }}" class="text-green-500 hover:text-green-700">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m4-4h-6a2 2 0 00-2 2v12a2 2 0 002 2h6a2 2 0 002-2V6a2 2 0 00-2-2z" />
+                                </svg>
+                                Descargar PDF
+                            </a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="border px-4 py-2 text-center">No hay cotizaciones disponibles.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <!-- Pie de Página -->
+    <footer class="bg-white shadow mt-12 no-print">
+        <div class="container mx-auto px-6 py-4 text-center text-gray-600">
+            &copy; 2024 DHGroup. Todos los derechos reservados.
+        </div>
+    </footer>
+</body>
+</html>

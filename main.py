@@ -13,19 +13,7 @@ import pdfplumber
 from docx import Document
 import json
 from functools import wraps
-
-# Decorador para medir el tiempo de ejecución de las funciones
-def measure_time(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        start_time = time.time()
-        result = func(*args, **kwargs)
-        duration = time.time() - start_time
-        if not hasattr(g, 'timings'):
-            g.timings = []
-        g.timings.append((func.__name__, duration))
-        return result
-    return wrapper
+from datetime import timedelta
 
 def login_required(f):
     @wraps(f)
@@ -44,11 +32,9 @@ if not api_key:
 
 client = OpenAI(api_key=api_key)
 
-@measure_time
 def cargar_base_de_datos_contenido(contenido_csv):
     try:
         df = pd.read_csv(StringIO(contenido_csv))
-        # Verificar que todas las columnas necesarias estén presentes, incluyendo 'SKU'
         columnas_necesarias = ['producto', 'precio', 'stock', 'SKU']
         if not all(col in df.columns for col in columnas_necesarias):
             raise ValueError(f"El CSV no tiene las columnas necesarias: {', '.join(columnas_necesarias)}.")
@@ -56,11 +42,9 @@ def cargar_base_de_datos_contenido(contenido_csv):
         df['stock'] = pd.to_numeric(df['stock'], errors='coerce')
         df.dropna(subset=['producto', 'precio', 'stock', 'SKU'], inplace=True)
         return df.reset_index(drop=True)
-    except Exception as e:
-        print(f"Error al cargar la base de datos: {e}")
+    except:
         return None
 
-@measure_time
 def extraer_texto_de_imagen_api(ruta_imagen):
     try:
         with open(ruta_imagen, "rb") as image_file:
@@ -81,25 +65,21 @@ def extraer_texto_de_imagen_api(ruta_imagen):
             )
             contenido = response.choices[0].message.content.strip()
             return procesar_respuesta_json(contenido)
-    except Exception as e:
-        print(f"Error al procesar la imagen: {e}")
+    except:
         return None
 
-@measure_time
 def extraer_texto_de_pdf(ruta_pdf):
-    texto = ""
     try:
+        texto = ""
         with pdfplumber.open(ruta_pdf) as pdf:
             for page in pdf.pages:
                 page_text = page.extract_text()
                 if page_text:
                     texto += page_text + "\n"
         return texto.strip()
-    except Exception as e:
-        print(f"Error al procesar el PDF: {e}")
+    except:
         return None
 
-@measure_time
 def extraer_texto_de_docx(ruta_docx):
     try:
         doc = Document(ruta_docx)
@@ -107,8 +87,7 @@ def extraer_texto_de_docx(ruta_docx):
         for p in doc.paragraphs:
             texto += p.text + "\n"
         return texto.strip()
-    except Exception as e:
-        print(f"Error al procesar el DOCX: {e}")
+    except:
         return None
 
 def normalizar_texto(texto):
@@ -119,23 +98,14 @@ def normalizar_texto(texto):
     return texto
 
 def procesar_respuesta_json(contenido):
-    # El contenido devuelto por la API debería ser un JSON con la estructura pedida
-    # Puede contener delimitadores ``` o ```json, los removemos.
     contenido_limpio = contenido.replace("```json", "").replace("```", "").strip()
     try:
         data = json.loads(contenido_limpio)
         return data
-    except json.JSONDecodeError as e:
-        print(f"Error al decodificar JSON: {e}")
-        print(f"Contenido problemático:\n{contenido_limpio}")
+    except:
         return None
 
-@measure_time
 def extraer_items_de_texto_con_openai(texto):
-    """
-    Esta función ahora no solo extrae los ítems, sino que también los interpreta (cantidad).
-    Se realiza en un solo prompt para evitar el segundo llamado.
-    """
     try:
         prompt = (
             "Tienes que extraer la lista de productos/items escolares exclusivamente del siguiente texto. "
@@ -157,17 +127,12 @@ def extraer_items_de_texto_con_openai(texto):
         )
         contenido = response.choices[0].message.content.strip()
         return procesar_respuesta_json(contenido)
-    except Exception as e:
-        print(f"Error al procesar el texto con OpenAI: {e}")
+    except:
         return None
 
-@measure_time
 def comparar_items_con_precios(lista_items, base_de_datos, score_threshold=55):
-    """
-    lista_items ahora es una lista de dict con {producto_original, cantidad}.
-    """
-    resultados = []
     base_de_datos['producto_normalizado'] = base_de_datos['producto'].apply(normalizar_texto)
+    resultados = []
 
     for item_data in lista_items:
         producto_original = item_data['producto_original']
@@ -185,10 +150,7 @@ def comparar_items_con_precios(lista_items, base_de_datos, score_threshold=55):
 
         if mejor_fila is not None and mejor_score >= score_threshold:
             precio_unitario = mejor_fila['precio'] if mejor_fila['stock'] > 0 else "No hay stock"
-            if precio_unitario != "No hay stock":
-                precio_total = precio_unitario * cantidad
-            else:
-                precio_total = "-"
+            precio_total = precio_unitario * cantidad if precio_unitario != "No hay stock" else "-"
             resultados.append({
                 "producto_original": producto_original,
                 "producto_csv": mejor_fila['producto'],
@@ -214,18 +176,21 @@ def comparar_items_con_precios(lista_items, base_de_datos, score_threshold=55):
     return resultados
 
 app = Flask(__name__)
-app.secret_key = 'LbX6pxQ8bW3uEdWbLAoPjUregZbgPNg3' 
+app.secret_key = 'LbX6pxQ8bW3uEdWbLAoPjUregZbgPNg3'
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+# Establecer duración de la sesión a 4 horas
+app.permanent_session_lifetime = timedelta(hours=4)
+
 @app.route("/login", methods=["GET", "POST"])
-@measure_time
 def login():
     if request.method == "POST":
         username = request.form.get("username")
         password = request.form.get("password")
         if username == "dhgroup2024" and password == "dhgroup2024":
             session['logged_in'] = True
+            session.permanent = True
             flash("Has iniciado sesión exitosamente.", "success")
             return redirect(url_for('index'))
         else:
@@ -234,7 +199,6 @@ def login():
     return render_template("login.html")
 
 @app.route("/logout")
-@measure_time
 @login_required
 def logout():
     session.pop('logged_in', None)
@@ -242,13 +206,11 @@ def logout():
     return redirect(url_for('login'))
 
 @app.route("/", methods=["GET"])
-@measure_time
 @login_required
 def index():
     return render_template("index.html")
 
 @app.route("/procesar", methods=["POST"])
-@measure_time
 @login_required
 def procesar():
     if "archivo" not in request.files:
@@ -292,24 +254,15 @@ def procesar():
         return "No se pudo extraer e interpretar ítems con OpenAI.", 500
 
     resultados = comparar_items_con_precios(items_interpretados, base_de_datos, score_threshold=55)
-
-    # Calcular total general
     total_general = 0
     for r in resultados:
         if r['precio_total'] != "-" and isinstance(r['precio_total'], (int, float)):
             total_general += r['precio_total']
 
-    # Preparar los datos para la plantilla
     datos_para_template = {
         "resultados": resultados,
         "total_general": total_general
     }
-
-    # Imprimir los tiempos de ejecución en la consola
-    if hasattr(g, 'timings'):
-        print("Tiempos de ejecución por función:")
-        for func_name, duration in g.timings:
-            print(f"{func_name}: {duration:.4f} segundos")
 
     return render_template("resultados.html", **datos_para_template)
 

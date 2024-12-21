@@ -1,0 +1,63 @@
+<!-- templates/cotizacion_pdf.html -->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Cotización {{ cotizacion.id }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        h1 { text-align: center; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #000; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <h1>Cotización {{ cotizacion.id }}</h1>
+    <p><strong>Archivo:</strong> {{ cotizacion.archivo }}</p>
+    <p><strong>Grado e Institución:</strong> {{ cotizacion.grado_e_institucion }}</p>
+    <p><strong>Fecha:</strong> {{ cotizacion.fecha.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+    <p><strong>Total General:</strong> S/ {{ "{:,.2f}".format(cotizacion.total_general) }}</p>
+    <h2>Resultados</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Producto Original</th>
+                <th>Producto CSV</th>
+                <th>SKU</th>
+                <th>Cantidad</th>
+                <th>Precio Unitario</th>
+                <th>Precio Total</th>
+                <th>Stock</th>
+                <th>Credibilidad</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for resultado in cotizacion.resultados %}
+            <tr>
+                <td>{{ resultado['producto_original'] }}</td>
+                <td>{{ resultado['producto_csv'] }}</td>
+                <td>{{ resultado['SKU'] }}</td>
+                <td>{{ resultado['cantidad'] }}</td>
+                <td>
+                    {% if resultado['precio_unitario'] != '-' and resultado['precio_unitario'] != 'No hay stock' %}
+                        S/ {{ "{:,.2f}".format(resultado['precio_unitario']) }}
+                    {% else %}
+                        {{ resultado['precio_unitario'] }}
+                    {% endif %}
+                </td>
+                <td>
+                    {% if resultado['precio_total'] != '-' %}
+                        S/ {{ "{:,.2f}".format(resultado['precio_total']) }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td>{{ resultado['stock'] }}</td>
+                <td>{{ resultado['credibilidad'] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
